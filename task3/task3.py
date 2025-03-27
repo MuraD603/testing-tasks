@@ -1,72 +1,65 @@
 import sys
 import json
 
-def load_json_file(file_path):
-    """Загрузка JSON файла с обработкой ошибок"""
+# Загрузка JSON-файла
+def load_f(file_path):    
+    
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             return json.load(file)
-    except FileNotFoundError:
-        print(f"Ошибка: файл {file_path} не найден", file=sys.stderr)
-        sys.exit(1)
-    except json.JSONDecodeError:
-        print(f"Ошибка: файл {file_path} содержит некорректный JSON", file=sys.stderr)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Ошибка при обработке {file_path}: {e}", file=sys.stderr)
         sys.exit(1)
 
-def save_json_file(data, file_path):
-    """Сохранение данных в JSON файл"""
+ # Сохранение данных в JSON-файл
+def save_json_file(data, file_path):        
     try:
         with open(file_path, 'w', encoding='utf-8') as file:
-            json.dump(data, file, ensure_ascii=False, indent=2)
-    except IOError:
-        print(f"Ошибка: невозможно записать в файл {file_path}", file=sys.stderr)
+            json.dump(data, file, ensure_ascii=False, indent=4)
+        print(f"Отчет успешно сохранен: {file_path}")
+    except IOError as e:
+        print(f"Ошибка записи в {file_path}: {e}", file=sys.stderr)
         sys.exit(1)
 
 def build_values_map(values_data):
-    """Создает словарь {id: value} из данных values.json"""
-    return {item['id']: item['value'] for item in values_data['values']}
+    
+    return {item['id']: item['value'] for item in values_data.get('values', [])}
 
-def fill_test_values(test_structure, values_map):
-    """Рекурсивно заполняет значения в структуре теста"""
-    if isinstance(test_structure, dict):
-        # Заполняем значение для текущего теста
-        if 'id' in test_structure:
-            test_id = test_structure['id']
-            if test_id in values_map:
-                test_structure['value'] = values_map[test_id]
-        
-        # Рекурсивно обрабатываем вложенные элементы
-        for key in test_structure:
-            if key != 'id' and key != 'value':  # Пропускаем уже обработанные поля
-                test_structure[key] = fill_test_values(test_structure[key], values_map)
-    
-    elif isinstance(test_structure, list):
-        # Обрабатываем список тестов
-        for i in range(len(test_structure)):
-            test_structure[i] = fill_test_values(test_structure[i], values_map)
-    
-    return test_structure
+def test_values(test_data, values_map):
+    if isinstance(test_data, dict):
+        test_id = test_data.get('id')
+        if test_id in values_map:
+            test_data['value'] = values_map[test_id]
+
+        # Обрабатываем все вложенные структуры, кроме id и value
+        for key in test_data:
+            if key not in {'id', 'value'}:
+                test_data[key] = test_values(test_data[key], values_map)
+
+    elif isinstance(test_data, list):
+        return [test_values(item, values_map) for item in test_data]
+
+    return test_data
 
 def main():
+    
     if len(sys.argv) != 4:
-        print("Использование: python task3.py tests.json values.json report.json", file=sys.stderr)
+        print("Ошибка: требуется три аргумента.\n"
+              "Использование: python task3.py tests.json values.json report.json", file=sys.stderr)
         sys.exit(1)
 
-    tests_file, values_file, report_file = sys.argv[1], sys.argv[2], sys.argv[3]
+    tests_path, values_path, report_path = sys.argv[1:4]
 
-    # Загрузка данных
-    tests_data = load_json_file(tests_file)
-    values_data = load_json_file(values_file)
+    # Загружаем входные файлы
+    tests_data = load_f(tests_path)
+    values_data = load_f(values_path)
 
-    # Создание словаря значений
+    # Создаем карту значений и заполняем тесты
     values_map = build_values_map(values_data)
+    tests_data['tests'] = test_values(tests_data.get('tests', []), values_map)
 
-    # Заполнение значений в структуре тестов
-    report_data = {'tests': fill_test_values(tests_data['tests'], values_map)}
-
-    # Сохранение отчета
-    save_json_file(report_data, report_file)
-    print(f"Отчет успешно сохранен в {report_file}")
+    # Сохраняем результат
+    save_json_file(tests_data, report_path)
 
 if __name__ == "__main__":
     main()
